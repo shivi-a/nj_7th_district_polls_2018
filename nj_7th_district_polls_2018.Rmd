@@ -1,0 +1,127 @@
+---
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load neccessary dependencies
+
+library(tidyverse)
+library(ggplot2)
+library(fs)
+library(stringr)
+library(gt)
+library(lubridate)
+library(forcats)
+
+```
+
+```{r own_plot, echo=FALSE}
+
+# Read in the data into a properly formatted dataframe
+
+nj <- read_csv(file = "mt_1_elections-poll-nj07-1.csv",
+                 col_types =  cols(
+                   .default = col_character(),
+                   turnout_scale = col_double(),
+                   turnout_score = col_double(),
+                   w_LV = col_double(),
+                   w_RV = col_double(),
+                   final_weight = col_double(),
+                   timestamp = col_datetime(format = "")))
+
+# For this graphic, I wanted to examine the distribution of undecided voters from the poll in terms of region and party affiliation. As per one of the guest lectures, there are two main approaches for elections -- increase turnout among those who are committed to voting for your party, and convince those who are definitely going to vote but are undecided to vote for your party. 
+# Such a visualization might provide "clues" as to where parties should invest their campaign dollars
+
+# Undecided voters represent a minority of those polled -- most have made up their minds. Yet even a percentage point or two can be enough to change the outcome of a race
+
+# For calculations later determining what percentage of the total individuals polled falls under a particular category
+
+nj_total <- nj %>% filter(!partyid == "[DO NOT READ] Refused") %>% nrow()
+
+# Understanding the percentage of Undecided in the poll
+und <- nj %>% filter(!partyid == "[DO NOT READ] Refused",
+                     response == "Und") %>% nrow() / nj_total
+
+nj %>%
+  
+  # Remove invalid values for partyid, limit responses to Undecided potential voters
+  
+  filter(!partyid == "[DO NOT READ] Refused", 
+         response == "Und") %>%
+  
+  # Create new variable that collapses the levels of partyid such that it is now Democrat, Republican, and Other, where other includes everything that does not fall into the former two categories
+  
+  mutate(partyid_collapsed = 
+           fct_collapse(partyid, 
+                        "Other" = c("Independent (No party)", "or as a member of another political party"))) %>% 
+  
+  # Change the level order of the factors such that their order on the barplot will match their size / frequency
+  
+  # Stylistically, I experimented with putting Other last as is often traditional, however, given that most Undecided voters did not identify as Republican or Democrat, this was the largest category and visually made sense to feature first
+  
+  mutate(partyid_collapsed = fct_relevel(partyid_collapsed, "Republican", "Democrat", "Other")) %>%
+  
+  # Change the level order of the factors for region such that their order on the barplot will match their size / frequency
+  
+   mutate(region = fct_relevel(region, "Hunterdon/Warren", "Somerset", "Morris", "Essex/Union")) %>% 
+  
+  # Recode the names of the region factors to include the fact that they are county designations
+  
+  mutate(region = fct_recode(region, "Morris County"="Morris", "Somerset County"="Somerset", "Essex/Union County"="Essex/Union", "Hunterdon/Warren County"="Hunterdon/Warren")) %>%
+  
+  # Group by the variables of interest to allow for counting within each possible combination of these variables
+  
+  group_by(region, partyid_collapsed) %>% 
+  
+  count() %>%
+  
+  # Convert the counts to percentages, specifically the represented percentage of the total possible voters polled
+  
+  mutate(pct = 100 * n / nj_total) %>% 
+  
+  # Create bar chart of percent of undecided voters belonging to each party affiliation per region
+  
+  ggplot(
+    aes(x = partyid_collapsed, y = pct, fill = partyid_collapsed)) + 
+  geom_col() + 
+  
+  # Display data per region to reveal county-specific variation
+  
+  facet_grid(~ region) + 
+  
+  labs(
+  
+    # Add informative title and subtitle
+    
+    title = "New Jersey's 7th District - Undecided Voters",
+    
+    subtitle = "Undecided voters represent 11% of those polled, enough to decide this close election. 
+    A regional breakdown indicates where parties could concentrate their efforts", 
+    
+    caption = "Source: New York Times Upshot / Siena College 2018 live polls") + 
+  
+  # Ensure that meaning of x and y axis are clear through labels
+  
+  xlab("Party Affiliation") + 
+  
+  ylab("Percent of Total Polled") +
+  
+  # Use a palette to set the colors of the bars to help with implicit signposting (e.g. Democrats are blue, Republicans are red, etc)
+  
+  scale_fill_brewer(palette="Set1") +
+  
+  # Prevent the y axis labels from being too busy -- limiting the intervals displayed
+  
+  scale_y_continuous(breaks = c(0, 1, 2)) + 
+  
+  # Removing the legend - the x and y axis labels suffice
+  
+  guides(fill = FALSE) + 
+  
+  # Flipping the coordinates so that the x axis (now y axis labels) do not overlap -- leading to a cleaner graph
+  
+  coord_flip()
+
+```
